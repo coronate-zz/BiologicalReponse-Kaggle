@@ -1,0 +1,83 @@
+---
+title: "Biological Response"
+author: "Alejandro Coronado, Fernanda Tellez, Liz"
+date: "2/5/2017"
+output: html_document
+---
+Cargar Variables
+
+```{r}
+
+datos<-read.csv('train.csv')
+length(complete.cases(datos))
+length(datos[1,])
+```
+
+La base de datos ya se encuentra limpia por lo que solo nos corresponde hacer el análisis de variables.
+EL problema principal es que contamos con 3751 observaciones y 1776 variables. De estas será necesario elegir solo aquella que nos permitan realizar la mejor predicci´ón sobre la variable dependiente.
+
+Análisis de Variable Dependiente:
+```{r}
+
+y<-datos['Activity']
+summary(y)
+
+
+```
+
+De todas las 3751 moleculas reportadas, el 54.23% estan etiquetadas con un reacci´ón biologica y el resto esta etiquetada sin reacción biológica.
+
+Procederemos a dividir nuestra muestra en conjunto de prueba y entrenamiento.
+```{r}
+
+```
+
+
+Para seleeccionar las variables mas representativas utilizaremos diferentes tecnicas y veremos cuales nos permiten obtener mejores scores sobre la predicci´ón de actividad biológica.
+
+Anlaisis de Componentes Principales:
+```{r}
+
+```
+
+Tecnica Rara de Esponda:
+```{r}
+
+```
+
+Otras Tecnicas:
+```{r}
+
+```
+
+
+
+
+Para cada una de las tecnicas aplicaremos diferentes modelos y veremos para cada señección de variables obtenemos mejores resultados.
+
+Modelo 1.
+```{r}
+
+
+```
+
+
+
+Modelo2.
+```{r}
+
+```
+
+
+
+Modelo3.
+```{r}
+
+```
+
+
+
+
+
+
+
