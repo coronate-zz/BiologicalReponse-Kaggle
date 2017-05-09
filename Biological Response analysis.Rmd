@@ -7,41 +7,259 @@ output: html_document
 Cargar Variables
 
 ```{r}
-
+setwd("~/Desktop/Git/BiologicalReponse-Kaggle")
 datos<-read.csv('train.csv')
+
+#Eliminando Variables Constantes.
+
 length(complete.cases(datos))
 length(datos[1,])
+
+
 ```
 
 La base de datos ya se encuentra limpia por lo que solo nos corresponde hacer el análisis de variables.
-EL problema principal es que contamos con 3751 observaciones y 1776 variables. De estas será necesario elegir solo aquella que nos permitan realizar la mejor predicci´ón sobre la variable dependiente.
+EL problema principal es que contamos con 3751 observaciones y 1776 variables. De estas será necesario elegir solo aquella que nos permitan realizar la mejor predicción sobre la variable dependiente.
 
 Análisis de Variable Dependiente:
 ```{r}
 
 y<-datos['Activity']
+X<-datos
+X['Activity']<-NULL
 summary(y)
+
+
 
 
 ```
 
-De todas las 3751 moleculas reportadas, el 54.23% estan etiquetadas con un reacci´ón biologica y el resto esta etiquetada sin reacción biológica.
+De todas las 3751 moleculas reportadas, el 54.23% estan etiquetadas con un reacción biologica y el resto esta etiquetada sin reacción biológica.
 
 Procederemos a dividir nuestra muestra en conjunto de prueba y entrenamiento.
+
+
 ```{r}
+
+
+#K fold validation
+seed <- 1809
+set.seed(seed)
+n_folds <- 5
+n_train<-length(datos[,1])
+folds_i <- sample(rep(1:n_folds, length.out = n_train))
+
+test_i <- which(folds_i == 1) 
+#for (k in 1:n_folds) 
+#{
+#  test_i <- which(folds_i == k) 
+#  aplicar funciones
+#}
+
+
+train_datos <- datos[-test_i, ]    
+test_datos <- datos[test_i, ]
+
+
+y_train<-train_datos['Activity']
+X_train<-train_datos
+X_train['Activity']<-NULL
+y_test<-test_datos['Activity']
+X_test<-test_datos
+X_test['Activity']<-NULL
+summary(y_test)
 
 ```
 
 
 Para seleeccionar las variables mas representativas utilizaremos diferentes tecnicas y veremos cuales nos permiten obtener mejores scores sobre la predicci´ón de actividad biológica.
 
-Anlaisis de Componentes Principales:
+*Anlaisis de Componentes Principales (PCA) *
 ```{r}
+#Eliminamos columnas constantes, puede ser que no sean constantes en toda la muestra pero si en el K-Foldinf
+X_train<-X_train[,apply(X_train, 2, var, na.rm=TRUE) != 0]
+
+X_train.pca <- prcomp(X_train,
+                 center = TRUE,
+                 scale. = TRUE) 
+#Con el pca podemos 
+
 
 ```
 
-Tecnica Rara de Esponda:
+
+Queremos ver con cuantos PCA podemos capturar la mayor parte de la varianza
 ```{r}
+initial<-0
+for(i in 1:300)
+{
+  
+  var<-summary(X_train.pca)$importance[3,i]
+  diff<-var-initial
+  initial<-var
+  
+  print(  paste("Numero:  " , paste( i, paste('  Varianza acumulada: '  , paste(var,    paste("     Aumento: ", diff))) )))
+}
+
+
+X_train_pca_181<-as.data.frame(X_train.pca$x[,1:181])
+
+
+```
+
+Esta tecnica resulta muy util para determinar el numero de variables que debemos incluir en el modelo. Los que nos indican estos números es que incluyendo 100 variables podemos representar el 69.4% de la varianza. Estas son malas noticias dada la pequeña cantidad de observaciones que tenemos. De acuerdo con la regla de deberíamos incluir a lo más log(3000) = 11.55 variables para entrenar el modelo pero con este número de variables apenas reportaríamos el 34% de nuestra varianza. Lo ideal sería resportar almenos el 85% de la varianza, para esto necesitamos 240 variables pero este número podría no ser efeiciente cuando tenemos tan pocas observaciones.
+Como podemos ver nos enfrentamos a un problema complejo; ¿Cómo pódemos generar la mejor predicción elegiendo las mejores variables sin disminuir los grados de libertad en nuestra muestra? ¿Preferimos reportar mayor varianza o tener más grados de libertad?¿Cuál combinación lineal de estos recursos nos dará los mejores resultados?  
+
+Empezaremos por elegir 181 variables que es donde encontramos el 80% de la varianza y tambíen es el punto donde agregar una variable más aumenta en menos del 0.001% la varianza.
+
+Existen otras técnicas de seleccion de variables como TSNE y Partial Least Squares regression. Utilizaremos PCA como bench mark sobre los mismo modelos para ver cuanto podemos mejorar las predicciones utilizando otras combinaciones de técnicas.
+
+
+*Random Forest:*
+```{r}
+library(randomForest)
+
+train<-cbind(y_train, X_train_pca_181 )
+test<-as.data.frame(predict(X_train.pca, newdata=X_test))
+test<-test[,1:181]
+test<-cbind(y_test, test)
+
+#Calculo del modelo
+model <- randomForest( factor(Activity) ~ . , data = train)
+#Orden de relevancia de las variables
+model$importance %>% as.data.frame() %>% mutate(var = row.names(.)) %>% arrange(desc(MeanDecreaseGini))
+
+#Resultados
+pred <- predict(model, newdata = test)
+resultados<-caret::confusionMatrix(pred, test$Activity)
+accuracy<-resultados$overall[1]
+
+```
+
+
+Aplicando esta tecnica con 500 RF obtenermos un nivel de predicción del 75%. Notemos que la predicción sólo se ha implementado sobre un fold por lo que debemos repetir el proceso para los 4 folds restantes y promediar los resultados. 
+
+**Apply K-Fold Random Forest**
+```{r}
+
+accuracy<-list()
+for (k in 1:n_folds) 
+{
+  print(paste("FOLD: ", k))
+  test_i <- which(folds_i == k) 
+
+  train_datos <- datos[-test_i, ]    
+  test_datos <- datos[test_i, ]
+  
+  #TRAIN
+  y_train<-train_datos['Activity']
+  X_train<-train_datos
+  X_train['Activity']<-NULL
+  #TEST
+  y_test<-test_datos['Activity']
+  X_test<-test_datos
+  X_test['Activity']<-NULL
+  
+  #Eliminamos columnas constantes, puede ser que no sean constantes en toda la muestra pero si en el K-Foldinf
+  X_train<-X_train[,apply(X_train, 2, var, na.rm=TRUE) != 0]
+  X_train.pca <- prcomp(X_train, center = TRUE,  scale. = TRUE) 
+  
+  
+  
+  X_train_pca_181<-as.data.frame(X_train.pca$x[,1:250])
+  train<-cbind(y_train, X_train_pca_181 )
+
+  train<-cbind(y_train, X_train_pca_181 )
+  test<-as.data.frame(predict(X_train.pca, newdata=X_test))
+  test<-test[,1:250]
+  test<-cbind(y_test, test)
+  #Calculo del modelo
+  model <- randomForest( factor(Activity) ~ . , data = train)
+
+  #Resultados
+  pred <- predict(model, newdata = test)
+  resultados<-caret::confusionMatrix(pred, test$Activity)
+  print(paste('Accuracy: ', resultados$overall[1]))
+  accuracy[i]<-resultados$overall[1]
+}
+
+```
+Con 181 variables logramos un nivel de predicción del 78.38% (promediando los 5 Folding samples).
+
+
+
+*Logistic Regression*
+```{r}
+
+train<-cbind(y_train, X_train_pca_181 )
+test<-as.data.frame(predict(X_train.pca, newdata=X_test))
+test<-test[,1:181]
+test<-cbind(y_test, test)
+
+model <- glm(factor(Activity) ~. , family=binomial(link='logit'),data=train)
+
+#Resultados
+pred <- predict(model, newdata = test)
+resultados<-caret::confusionMatrix(pred, test$Activity)
+accuracy<-resultados$overall[1]
+
+```
+
+
+```{r}
+maxs <- apply(datos, 2, max) 
+mins <- apply(datos, 2, min)
+scaled <- as.data.frame(scale(datos, center = mins, scale = maxs - mins))
+
+train_datos <- scaled[-test_i, ]    
+test_datos <- scaled[test_i, ]
+
+
+y_train<-train_datos['Activity']
+X_train<-train_datos
+X_train['Activity']<-NULL
+y_test<-test_datos['Activity']
+X_test<-test_datos
+X_test['Activity']<-NULL
+
+X_train<-X_train[,apply(X_train, 2, var, na.rm=TRUE) != 0]
+X_train.pca <- prcomp(X_train, center = TRUE, scale. = TRUE) 
+X_train_pca_181<-as.data.frame(X_train.pca$x[,1:181])
+
+
+train<-cbind(y_train, X_train_pca_181 )
+test<-as.data.frame(predict(X_train.pca, newdata=X_test))
+test<-test[,1:181]
+test<-cbind(y_test, test)
+
+
+
+library(neuralnet)
+n <- names(train)
+f <- as.formula(paste("Activity ~", paste(n[!n %in% "Activity"], collapse = " + ")))
+nn <- neuralnet(f,data=train,hidden=c(5,3),linear.output=T)
+
+plot(nn)
+
+```
+
+
+Tecnica Rara de Esponda:
+Primero generamos una matriz de correlaciones y utilizamos una regresion logistica para obtener el coeficiente de todas las variables. Identificamos los coeficientes más significativos y eliminamos todas las variables altamente correlacionadas con esta variable significativa (correlacion mayor a .85). Repetimos el proceso hasta alcanzar un nivel de varianza aceptable.
+```{r}
+dataSelection<-datos
+correlaciones<-cor(dataSelection)
+
+
+while(varianza ...)
+{
+  for(columna in names(DataSelection))
+  {
+    dataSelection
+  }
+}
+model <- glm(Activity ~.,family=binomial, data=dataSelection)
+
 
 ```
 
